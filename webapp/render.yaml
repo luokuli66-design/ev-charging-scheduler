@@ -1,0 +1,15 @@
+# Render Blueprint
+# 自动部署配置文件
+
+services:
+  - type: web
+    name: ev-charging-scheduler
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
