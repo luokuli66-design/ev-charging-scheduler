@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>HAPPO-GNN-RL 充电站动态调度优化系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ range(100000, 999999) | random }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // 强制防缓存：检测页面是否来自 bfcache，如果是则强制刷新
+        window.onpageshow = function(event) {
+            if (event.persisted) {
+                window.location.reload(true);
+            }
+        };
+        // 每次加载都带时间戳，确保不缓存
+        if (!window.location.search.includes('_nocache')) {
+            var url = new URL(window.location.href);
+            url.searchParams.set('_nocache', Date.now());
+            window.history.replaceState({}, '', url);
+        }
+    </script>
+</head>
+<body>
+
+<!-- 侧边栏 -->
+<nav class="sidebar">
+    <div class="sidebar-header">
+        <h2>⚡ 充电站优化系统</h2>
+        <div class="subtitle">HAPPO-GNN-RL v2.0</div>
+    </div>
+    <ul class="nav-list">
+        <li><a href="#" class="nav-link active" data-page="dashboard"><span class="nav-icon">📊</span><span class="nav-text">控制面板</span></a></li>
+        <li><a href="#" class="nav-link" data-page="stations"><span class="nav-icon">🏭</span><span class="nav-text">充电站管理</span></a></li>
+        <li><a href="#" class="nav-link" data-page="sessions"><span class="nav-icon">🔋</span><span class="nav-text">充电记录</span></a></li>
+        <li><a href="#" class="nav-link" data-page="predict"><span class="nav-icon">🧠</span><span class="nav-text">调度决策</span></a></li>
+        <li><a href="#" class="nav-link" data-page="compare"><span class="nav-icon">📈</span><span class="nav-text">方法对比</span></a></li>
+        <li><a href="#" class="nav-link" data-page="algorithm"><span class="nav-icon">🧬</span><span class="nav-text">算法模型</span></a></li>
+    </ul>
+    <div class="sidebar-footer">
+        <div class="user-info">
+            <div class="user-avatar" id="user-avatar">{{ user.username[0]|upper }}</div>
+            <span>{{ user.username }}</span>
+        </div>
+        <a href="{{ url_for('logout') }}" class="logout-btn">退出</a>
+    </div>
+</nav>
+
+<!-- 主内容区 -->
+<main class="main-content">
+
+    <!-- ========== 控制面板 ========== -->
+    <section id="page-dashboard" class="page active">
+        <h1><span class="page-icon">📊</span> 控制面板</h1>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">📋</div>
+                <div class="stat-value" id="stat-sessions">-</div>
+                <div class="stat-label">充电记录数</div>
+                <div class="stat-trend neutral" id="stat-sessions-trend">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⏱️</div>
+                <div class="stat-value" id="stat-wait">-</div>
+                <div class="stat-label">平均等待(分钟)</div>
+                <div class="stat-trend down" id="stat-wait-trend">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⚡</div>
+                <div class="stat-value" id="stat-energy">-</div>
+                <div class="stat-label">平均能耗(kWh)</div>
+                <div class="stat-trend neutral" id="stat-energy-trend">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🎯</div>
+                <div class="stat-value" id="stat-reward">-</div>
+                <div class="stat-label">平均奖励</div>
+                <div class="stat-trend up" id="stat-reward-trend">--</div>
+            </div>
+        </div>
+        <div class="chart-container">
+            <h3>充电趋势概览</h3>
+            <canvas id="chart-waiting"></canvas>
+        </div>
+    </section>
+
+    <!-- ========== 充电站管理 ========== -->
+    <section id="page-stations" class="page">
+        <h1><span class="page-icon">🏭</span> 充电站管理</h1>
+        <div class="table-wrap">
+            <div class="table-toolbar">
+                <input type="text" class="search-input" id="station-search" placeholder="搜索充电站ID或类型...">
+                <span class="table-count" id="station-count">共 0 个充电站</span>
+            </div>
+            <div id="stations-table-wrap">
+                <div class="loading-text"><div class="spinner" style="width:20px;height:20px;border-width:2px;"></div> 加载中<span class="loading-dots"></span></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== 充电记录 ========== -->
+    <section id="page-sessions" class="page">
+        <h1><span class="page-icon">🔋</span> 充电记录</h1>
+        <div class="table-wrap">
+            <div class="table-toolbar">
+                <input type="text" class="search-input" id="session-search" placeholder="搜索充电站、车型...">
+                <select id="session-vehicle-filter" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none;background:#f8fafc;">
+                    <option value="">全部车型</option>
+                    <option value="Bus">公交 Bus</option>
+                    <option value="Car">乘用车 Car</option>
+                    <option value="Two-Wheeler">两轮车</option>
+                </select>
+                <span class="table-count" id="session-count">共 0 条记录</span>
+            </div>
+            <div id="sessions-table-wrap">
+                <div class="loading-text"><div class="spinner" style="width:20px;height:20px;border-width:2px;"></div> 加载中<span class="loading-dots"></span></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== 调度决策 ========== -->
+    <section id="page-predict" class="page">
+        <h1><span class="page-icon">🎯</span> 双层调度决策系统</h1>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:20px;">
+            <strong>第一层（站点级）</strong>：基于贪心规则选择最优站点（无需训练）<br>
+            <strong>第二层（充电桩级）</strong>：基于 HAPPO-GNN-RL 模型分配最优充电桩
+        </p>
+        <div class="chart-container">
+            <h3>输入调度参数</h3>
+            <div class="form-grid" style="margin-bottom:24px;">
+                <div class="form-group">
+                    <label>🚗 车辆类型</label>
+                    <select id="pred-vehicle">
+                        <option value="Bus">公交 Bus</option>
+                        <option value="Car" selected>乘用车 Car</option>
+                        <option value="Two-Wheeler">两轮车 Two-Wheeler</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>🧠 充电桩分配模型</label>
+                    <select id="pred-model">
+                        <option value="mh_res_gat">MH-Res-GAT（多头残差注意力）</option>
+                        <option value="happo_gnn_rl" selected>HAPPO-GNN-RL（融合物理先验）</option>
+                    </select>
+                </div>
+            </div>
+            <button class="btn" id="btn-predict" onclick="runPredict()">⚡ 运行双层调度决策</button>
+        </div>
+
+        <div id="pred-result" class="result-card" style="display:none;"></div>
+    </section>
+
+    <!-- ========== 方法对比 ========== -->
+    <section id="page-compare" class="page">
+        <h1><span class="page-icon">📈</span> 方法对比分析</h1>
+
+        <!-- 综合评分卡片 -->
+        <div class="score-cards-grid" id="score-cards"></div>
+
+        <!-- 关键指标卡片 -->
+        <div class="data-cards-grid" id="compare-summary-cards"></div>
+
+        <!-- 柱状图区 -->
+        <div class="radar-compare-container">
+            <div class="chart-box">
+                <h4>等待时间对比 (min)</h4>
+                <canvas id="chart-compare-wait"></canvas>
+            </div>
+            <div class="chart-box">
+                <h4>能耗对比 (kWh)</h4>
+                <canvas id="chart-compare-energy"></canvas>
+            </div>
+        </div>
+
+        <!-- 雷达图 -->
+        <div class="radar-card">
+            <h3>多维性能雷达图</h3>
+            <div class="radar-card-subtitle">HAPPO-GNN-RL vs MAPPO vs 传统RL 六维度综合对比</div>
+            <div style="max-width:520px;margin:0 auto;">
+                <canvas id="chart-radar"></canvas>
+            </div>
+            <div class="radar-legend-custom" id="radar-legend"></div>
+        </div>
+
+        <!-- 数据表格 -->
+        <div class="compare-table-section">
+            <h3>详细数据对比</h3>
+            <div class="compare-table-desc">点击表头可排序 | 绿色背景行为本系统方法 | 1st/2nd/3rd 标记各列最优排名</div>
+            <div id="compare-table-wrap"></div>
+        </div>
+    </section>
+
+    <!-- ========== 算法模型 ========== -->
+    <section id="page-algorithm" class="page">
+        <h1><span class="page-icon">🧬</span> HAPPO-GNN-RL 算法模型</h1>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:20px;">基于图注意力网络 + 异步并行PPO 的充电站动态调度优化</p>
+
+        <!-- 运行控制面板 -->
+        <div style="background:var(--bg-card);border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #e2e8f0;">
+            <h3 style="font-size:15px;margin-bottom:14px;">⚡ 算法运行控制台</h3>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
+                <div>
+                    <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px;">选择模型</label>
+                    <select id="algo-cfg-model" style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none;background:#f8fafc;">
+                        <option value="mh_res_gat" selected>MH-Res-GAT（多头残差注意力）</option>
+                        <option value="physics_dynamic">物理先验 + 动态学习融合模型</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px;">物理先验权重 γ</label>
+                    <input type="number" id="algo-cfg-gamma" value="0.3" step="0.05" min="0" max="1" style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none;width:80px;background:#f8fafc;">
+                </div>
+                <div>
+                    <label style="font-size:12px;color:#64748b;display:block;margin-bottom:3px;">采样数据量</label>
+                    <input type="number" id="algo-cfg-sample" value="2000" step="500" min="500" max="8000" style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none;width:90px;background:#f8fafc;">
+                </div>
+                <div>
+                    <button id="algo-btn-run" onclick="algoRun()" style="background:linear-gradient(135deg,#1565C0,#0D47A1);color:white;border:none;padding:8px 22px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">▶ 运行算法</button>
+                </div>
+            </div>
+            <div id="algo-run-status" style="font-size:12px;color:#64748b;display:none;align-items:center;gap:6px;">
+                <div style="width:14px;height:14px;border:2px solid #e2e8f0;border-top-color:#1565C0;border-radius:50%;animation:spin 0.6s linear infinite;"></div>
+                <span id="algo-status-text">正在运行...</span>
+            </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div id="algo-empty" style="text-align:center;padding:50px 20px;color:#94a3b8;">
+            <div style="font-size:42px;margin-bottom:12px;">🧠</div>
+            <h3 style="color:#334155;margin-bottom:6px;">点击"运行算法"开始</h3>
+            <p>将从 data.csv 加载真实数据，执行 HAPPO-GNN-RL 模型</p>
+        </div>
+
+        <!-- 结果区 -->
+        <div id="algo-results" style="display:none;">
+            <div id="algo-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:20px;"></div>
+
+            <!-- Tab -->
+            <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:2px solid #e2e8f0;">
+                <button class="algo-tab active" data-algo-tab="overview" onclick="algoSwitchTab(this,'overview')" style="padding:9px 18px;font-size:13px;font-weight:500;color:#64748b;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;">📊 总览</button>
+                <button class="algo-tab" data-algo-tab="attention" onclick="algoSwitchTab(this,'attention')" style="padding:9px 18px;font-size:13px;font-weight:500;color:#64748b;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;">🧠 注意力</button>
+                <button class="algo-tab" data-algo-tab="stations" onclick="algoSwitchTab(this,'stations')" style="padding:9px 18px;font-size:13px;font-weight:500;color:#64748b;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;">🏭 站点调度</button>
+            </div>
+
+            <div id="algo-tab-overview" class="algo-tab-content">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                    <div style="background:var(--bg-card);border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #e2e8f0;">
+                        <h4 style="font-size:13px;margin-bottom:10px;">各站点平均等待时间</h4>
+                        <canvas id="algo-chart-wait"></canvas>
+                    </div>
+                    <div style="background:var(--bg-card);border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #e2e8f0;">
+                        <h4 style="font-size:13px;margin-bottom:10px;">各站点平均充电功率</h4>
+                        <canvas id="algo-chart-power"></canvas>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                    <div style="background:var(--bg-card);border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #e2e8f0;">
+                        <h4 style="font-size:13px;margin-bottom:10px;">绿能占比 vs 调度决策</h4>
+                        <canvas id="algo-chart-green"></canvas>
+                    </div>
+                    <div style="background:var(--bg-card);border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #e2e8f0;">
+                        <h4 style="font-size:13px;margin-bottom:10px;">优化前后等待时间对比</h4>
+                        <canvas id="algo-chart-before"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div id="algo-tab-attention" class="algo-tab-content" style="display:none;">
+                <div style="background:var(--bg-card);border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #e2e8f0;margin-bottom:16px;">
+                    <h4 style="font-size:13px;margin-bottom:10px;">GAT 注意力权重热力图</h4>
+                    <canvas id="algo-chart-heatmap"></canvas>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                    <div style="background:var(--bg-card);border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #e2e8f0;">
+                        <h4 style="font-size:13px;margin-bottom:10px;">各站点关联 Top5</h4>
+                        <div id="algo-attn-list" style="max-height:380px;overflow-y:auto;font-size:13px;"></div>
+                    </div>
+                    <div style="background:var(--bg-card);border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #e2e8f0;">
+                        <h4 style="font-size:13px;margin-bottom:10px;">注意力分布统计</h4>
+                        <canvas id="algo-chart-attn-dist"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div id="algo-tab-stations" class="algo-tab-content" style="display:none;">
+                <div style="background:var(--bg-card);border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #e2e8f0;overflow:hidden;">
+                    <div style="padding:12px 16px;border-bottom:1px solid #e2e8f0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <input type="text" id="algo-station-filter" placeholder="搜索站点ID / 类型..." oninput="algoFilterStations()" style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none;width:200px;background:#f8fafc;">
+                        <select id="algo-action-filter" onchange="algoFilterStations()" style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none;background:#f8fafc;">
+                            <option value="">全部决策</option>
+                            <option value="up">提升功率</option>
+                            <option value="maintain">维持功率</option>
+                            <option value="down">降低功率</option>
+                        </select>
+                        <span id="algo-station-count" style="margin-left:auto;font-size:12px;color:#64748b;"></span>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:12px;" id="algo-station-table">
+                            <thead>
+                                <tr style="background:#f8fafc;">
+                                    <th style="padding:9px 10px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">站点</th>
+                                    <th style="padding:9px 10px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">类型</th>
+                                    <th style="padding:9px 10px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">记录数</th>
+                                    <th style="padding:9px 10px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">等待</th>
+                                    <th style="padding:9px 10px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">功率</th>
+                                    <th style="padding:9px 10px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">能耗</th>
+                                    <th style="padding:9px 10px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">决策</th>
+                                    <th style="padding:9px 10px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">关联站点</th>
+                                </tr>
+                            </thead>
+                            <tbody id="algo-station-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}?v={{ range(100000, 999999) | random }}"></script>
+</body>
+</html>

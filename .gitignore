@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.db
+*.sqlite
+venv/
+.venv/
+
+# 模型文件（太大）
+*.pth
+*.pt
+
+# 日志
+*.log
+flask*.log
+
+# Node
+node_modules/
+
+# 系统
+.DS_Store
+Thumbs.db
+nul
+
+# GitHub token等敏感文件
+.ngrok_token
+*.token
+
+# 工作目录
+.workbuddy/
+
+# 备份
+*.backup
+*_backup*

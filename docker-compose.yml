@@ -1,0 +1,70 @@
+# ============================
+# HAPPO-GNN-RL Web 应用
+# Docker Compose 配置
+# ============================
+services:
+
+  # --- Web 应用服务 ---
+  webapp:
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    container_name: happo-gnn-webapp
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=happo-gnn-rl-secret-key-2026
+    volumes:
+      # 挂载 data.csv 供数据库初始化使用
+      - ./data.csv:/app/data.csv:ro
+      # 持久化 SQLite 数据库
+      - webapp_data:/app
+    networks:
+      - happo-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/login')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # --- 可选：Gunicorn + Nginx 生产部署 ---
+  # 取消注释以启用生产级部署
+  #
+  # gunicorn:
+  #   image: python:3.11-slim
+  #   container_name: happo-gnn-gunicorn
+  #   command: gunicorn -w 4 -b 0.0.0.0:8000 --timeout 120 app:app
+  #   working_dir: /app
+  #   volumes:
+  #     - ./webapp:/app:ro
+  #     - ./data.csv:/app/data.csv:ro
+  #     - gunicorn_data:/app
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     - webapp
+  #   networks:
+  #     - happo-network
+  #
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: happo-gnn-nginx
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - gunicorn
+  #   networks:
+  #     - happo-network
+
+networks:
+  happo-network:
+    driver: bridge
+
+volumes:
+  webapp_data:
+    driver: local

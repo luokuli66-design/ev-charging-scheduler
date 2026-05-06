@@ -1,0 +1,27 @@
+# .dockerignore — 排除不需要复制到镜像的文件
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.git
+.gitignore
+.gitattributes
+.env
+.env.local
+*.md
+README*
+.DS_Store
+Thumbs.db
+*.log
+*.sqlite
+*.db-journal
+.vscode
+.idea
+*.bak
+node_modules

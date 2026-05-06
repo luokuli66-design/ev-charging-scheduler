@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HAPPO-GNN-RL 模型算法 | 电车充电站动态调度优化</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --card: #1a2332;
+    --card-hover: #1e2d45;
+    --border: #2a3a55;
+    --accent: #38bdf8;
+    --accent2: #818cf8;
+    --accent3: #34d399;
+    --accent4: #fb923c;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --glow: rgba(56, 189, 248, 0.15);
+    --glow2: rgba(129, 140, 248, 0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* 背景粒子 */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 10%, rgba(56,189,248,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 80%, rgba(129,140,248,0.06) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* 网格线 */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+      linear-gradient(rgba(56,189,248,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(56,189,248,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+  /* ========== 导航栏 ========== */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(10,14,26,0.85);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+  nav .nav-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    height: 60px;
+  }
+  nav .logo {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+  }
+  nav .logo span { color: var(--text-muted); font-weight: 400; }
+  nav .nav-links { display: flex; gap: 4px; list-style: none; }
+  nav .nav-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  nav .nav-links a:hover { color: var(--text); background: var(--card); }
+  nav .nav-links a.active { color: var(--accent); background: rgba(56,189,248,0.1); }
+
+  /* ========== Hero ========== */
+  .hero {
+    padding: 80px 0 60px;
+    text-align: center;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(56,189,248,0.1);
+    border: 1px solid rgba(56,189,248,0.25);
+    color: var(--accent);
+    font-size: 12px;
+    padding: 4px 14px;
+    border-radius: 100px;
+    margin-bottom: 24px;
+    font-weight: 500;
+  }
+  .hero h1 {
+    font-size: clamp(28px, 5vw, 52px);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -1px;
+    margin-bottom: 12px;
+  }
+  .hero h1 .line1 { color: var(--text); }
+  .hero h1 .line2 { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero .subtitle {
+    font-size: 16px;
+    color: var(--text-muted);
+    max-width: 640px;
+    margin: 0 auto 40px;
+    line-height: 1.8;
+  }
+  .hero-cards {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 48px;
+  }
+  .hero-stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px 28px;
+    text-align: center;
+    min-width: 140px;
+  }
+  .hero-stat .num {
+    font-size: 32px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+  }
+  .hero-stat .label { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+  /* ========== 架构图 ========== */
+  .arch-section { padding: 20px 0 40px; }
+  .arch-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .arch-subtitle { font-size: 13px; color: var(--text-dim); margin-bottom: 24px; }
+  .arch-flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    overflow-x: auto;
+    padding: 24px 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .arch-flow::-webkit-scrollbar { height: 4px; }
+  .arch-flow::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .arch-node {
+    flex: 0 0 auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 20px;
+    text-align: center;
+    min-width: 120px;
+    position: relative;
+  }
+  .arch-node .node-icon { font-size: 24px; margin-bottom: 6px; }
+  .arch-node .node-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .arch-node .node-desc { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .arch-node.blue { border-color: rgba(56,189,248,0.4); background: rgba(56,189,248,0.05); }
+  .arch-node.purple { border-color: rgba(129,140,248,0.4); background: rgba(129,140,248,0.05); }
+  .arch-node.green { border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.05); }
+  .arch-node.orange { border-color: rgba(251,146,60,0.4); background: rgba(251,146,60,0.05); }
+  .arch-node.cyan { border-color: rgba(6,182,212,0.4); background: rgba(6,182,212,0.05); }
+  .arch-arrow {
+    flex: 0 0 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 0 2px;
+  }
+  .arch-arrow .line {
+    width: 32px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--border), var(--accent), var(--border));
+    border-radius: 1px;
+  }
+  .arch-arrow .arrow-text { font-size: 10px; color: var(--text-dim); }
+
+  /* ========== 通用区块 ========== */
+  .section { padding: 20px 0; }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .section-num {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: white;
+    font-family: 'JetBrains Mono', monospace;
+    flex-shrink: 0;
+  }
+  .section-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .section-subtitle { font-size: 13px; color: var(--text-dim); }
+
+  /* ========== 公式卡片 ========== */
+  .formula-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+    gap: 16px;
+  }
+  @media(max-width: 600px) {
+    .formula-grid { grid-template-columns: 1fr; }
+  }
+
+  .formula-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+  .formula-card:hover {
+    border-color: rgba(56,189,248,0.3);
+    box-shadow: 0 0 24px var(--glow);
+    transform: translateY(-2px);
+  }
+  .formula-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: rgba(56,189,248,0.04);
+    border-bottom: 1px solid var(--border);
+  }
+  .formula-card-header .tag {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 100px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .tag-formula { background: rgba(56,189,248,0.15); color: var(--accent); }
+  .tag-step { background: rgba(129,140,248,0.15); color: var(--accent2); }
+  .tag-loss { background: rgba(52,211,153,0.15); color: var(--accent3); }
+  .tag-action { background: rgba(251,146,60,0.15); color: var(--accent4); }
+  .tag-label { background: rgba(6,182,212,0.15); color: #06b6d4; }
+
+  .formula-number {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--surface);
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+
+  .formula-display {
+    padding: 20px 20px 16px;
+    text-align: center;
+    font-family: 'Cambria Math', 'Noto Serif SC', serif;
+    font-size: 15px;
+    color: var(--text);
+    line-height: 2.2;
+    background: rgba(0,0,0,0.2);
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 0.3px;
+  }
+  .formula-display .main-eq {
+    display: block;
+    font-size: 16px;
+    color: #f1f5f9;
+    margin-bottom: 8px;
+  }
+  .formula-display .var-note {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: 'Noto Sans SC', sans-serif;
+    font-style: italic;
+    letter-spacing: 0.2px;
+  }
+
+  .formula-explain {
+    padding: 14px 16px;
+  }
+  .formula-explain h4 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .formula-explain h4::before {
+    content: '';
+    width: 12px;
+    height: 12px;
+    background: var(--accent);
+    border-radius: 50%;
+    opacity: 0.6;
+  }
+  .formula-explain p {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.8;
+  }
+
+  /* ========== 算法区块 ========== */
+  .algo-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 20px;
+    transition: all 0.3s;
+  }
+  .algo-card:hover {
+    border-color: rgba(129,140,248,0.3);
+    box-shadow: 0 0 20px var(--glow2);
+  }
+  .algo-header {
+    padding: 16px 20px;
+    background: rgba(129,140,248,0.05);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .algo-icon { font-size: 20px; }
+  .algo-title { font-size: 15px; font-weight: 700; color: var(--text); }
+  .algo-tag {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--accent2);
+    background: rgba(129,140,248,0.12);
+    padding: 2px 10px;
+    border-radius: 100px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .algo-body { padding: 0; }
+  .algo-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.9;
+    padding: 20px 24px;
+    background: rgba(0,0,0,0.3);
+    color: #c4d4e4;
+    overflow-x: auto;
+  }
+  .algo-code::-webkit-scrollbar { height: 4px; }
+  .algo-code::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .algo-code .kw { color: #c792ea; font-weight: 600; }
+  .algo-code .fn { color: #82aaff; }
+  .algo-code .num { color: #f78c6c; }
+  .algo-code .comment { color: #546e7a; font-style: italic; }
+  .algo-code .indent { padding-left: 2em; display: block; }
+  .algo-code .indent2 { padding-left: 4em; display: block; }
+  .algo-code .indent3 { padding-left: 6em; display: block; }
+  .algo-code .step { color: #ffcb6b; font-weight: 600; }
+  .algo-code .arrow { color: var(--accent3); }
+  .algo-code .bold { color: #f1f5f9; font-weight: 600; }
+
+  /* ========== 流程阶段 ========== */
+  .phase-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin: 24px 0;
+  }
+  @media(max-width: 768px) {
+    .phase-strip { grid-template-columns: 1fr 1fr; }
+  }
+  .phase-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    position: relative;
+  }
+  .phase-item::after {
+    content: '→';
+    position: absolute;
+    right: -16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .phase-item:last-child::after { display: none; }
+  .phase-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin: 0 auto 8px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .phase-item:nth-child(1) .phase-num { background: rgba(56,189,248,0.2); color: var(--accent); }
+  .phase-item:nth-child(2) .phase-num { background: rgba(129,140,248,0.2); color: var(--accent2); }
+  .phase-item:nth-child(3) .phase-num { background: rgba(52,211,153,0.2); color: var(--accent3); }
+  .phase-item:nth-child(4) .phase-num { background: rgba(251,146,60,0.2); color: var(--accent4); }
+  .phase-item:nth-child(5) .phase-num { background: rgba(6,182,212,0.2); color: #06b6d4; }
+  .phase-item .phase-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .phase-item .phase-desc { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+  /* ========== 变量表 ========== */
+  .var-table-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-top: 24px;
+  }
+  .var-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .var-table th {
+    background: rgba(56,189,248,0.08);
+    color: var(--accent);
+    padding: 10px 16px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .var-table td {
+    padding: 9px 16px;
+    color: var(--text-muted);
+    border-bottom: 1px solid rgba(42,58,85,0.5);
+    vertical-align: top;
+  }
+  .var-table tr:last-child td { border-bottom: none; }
+  .var-table tr:hover td { background: rgba(56,189,248,0.03); }
+  .var-table .sym { font-family: 'JetBrains Mono', monospace; color: var(--text); font-size: 12px; }
+  .var-table .role-badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 100px;
+    font-weight: 600;
+  }
+  .role-physics { background: rgba(56,189,248,0.15); color: var(--accent); }
+  .role-gat { background: rgba(129,140,248,0.15); color: var(--accent2); }
+  .role-policy { background: rgba(251,146,60,0.15); color: var(--accent4); }
+  .role-reward { background: rgba(52,211,153,0.15); color: var(--accent3); }
+
+  /* ========== 页脚 ========== */
+  footer {
+    text-align: center;
+    padding: 40px 24px;
+    color: var(--text-dim);
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  /* 动画 */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .section { animation: fadeInUp 0.6s ease both; }
+  .section:nth-child(2) { animation-delay: 0.1s; }
+  .section:nth-child(3) { animation-delay: 0.2s; }
+  .section:nth-child(4) { animation-delay: 0.3s; }
+</style>
+</head>
+<body>
+
+<!-- 导航栏 -->
+<nav>
+  <div class="nav-inner">
+    <div class="logo">HAPPO<span>-GNN-RL</span></div>
+    <ul class="nav-links">
+      <li><a href="#arch" class="active">模型架构</a></li>
+      <li><a href="#formulas">核心公式</a></li>
+      <li><a href="#algorithms">算法伪代码</a></li>
+      <li><a href="#variables">变量说明</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">
+      <span>📡</span> 多智能体强化学习 · 图神经网络 · 电车充电站调度
+    </div>
+    <h1>
+      <span class="line1">HAPPO-GNN-RL</span><br>
+      <span class="line2">充电站动态调度优化模型</span>
+    </h1>
+    <p class="subtitle">
+      基于自适应异质多智能体近端策略优化（HAPPO）与多头残差图注意力网络（MH-Res-GAT），
+      融合物理先验与格兰杰因果检验，实现电车充电站智能动态调度。
+    </p>
+    <div class="hero-cards">
+      <div class="hero-stat"><div class="num">14</div><div class="label">核心公式</div></div>
+      <div class="hero-stat"><div class="num">3</div><div class="label">算法模块</div></div>
+      <div class="hero-stat"><div class="num">3</div><div class="label">网络组件</div></div>
+      <div class="hero-stat"><div class="num">4</div><div class="label">车辆类型</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 架构图 -->
+<section class="arch-section section" id="arch">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">1</div>
+      <div>
+        <div class="section-title">模型架构</div>
+        <div class="section-subtitle">MH-Res-GAT → 策略网络 → 动作掩码 → HAPPO训练</div>
+      </div>
+    </div>
+    <div class="arch-flow">
+      <div class="arch-node blue">
+        <div class="node-icon">🔗</div>
+        <div class="node-name">物理先验</div>
+        <div class="node-desc">互信息MI +<br>格兰杰因果</div>
+      </div>
+      <div class="arch-arrow"><div class="line"></div><div class="arrow-text">S矩阵</div></div>
+      <div class="arch-node purple">
+        <div class="node-icon">🧠</div>
+        <div class="node-name">MH-Res-GAT</div>
+        <div class="node-desc">多头注意力<br>残差连接</div>
+      </div>
+      <div class="arch-arrow"><div class="line"></div><div class="arrow-text">特征</div></div>
+      <div class="arch-node cyan">
+        <div class="node-icon">⚡</div>
+        <div class="node-name">策略网络</div>
+        <div class="node-desc">MLP<br>异质策略</div>
+      </div>
+      <div class="arch-arrow"><div class="line"></div><div class="arrow-text">概率</div></div>
+      <div class="arch-node orange">
+        <div class="node-icon">🎭</div>
+        <div class="node-name">动作掩码</div>
+        <div class="node-desc">掩码 +<br>重归一化</div>
+      </div>
+      <div class="arch-arrow"><div class="line"></div><div class="arrow-text">归一概率</div></div>
+      <div class="arch-node green">
+        <div class="node-icon">🎯</div>
+        <div class="node-name">HAPPO</div>
+        <div class="node-desc">顺序更新<br>PPO裁剪</div>
+      </div>
+      <div class="arch-arrow"><div class="line"></div><div class="arrow-text">θ更新</div></div>
+      <div class="arch-node blue">
+        <div class="node-icon">🚗</div>
+        <div class="node-name">充电调度</div>
+        <div class="node-desc">4类车型<br>动态分配</div>
+      </div>
+    </div>
+
+    <!-- 训练流程 -->
+    <div class="phase-strip">
+      <div class="phase-item">
+        <div class="phase-num">1</div>
+        <div class="phase-name">GAT特征提取</div>
+        <div class="phase-desc">物理先验 → GAT → 空间特征</div>
+      </div>
+      <div class="phase-item">
+        <div class="phase-num">2</div>
+        <div class="phase-name">多智能体交互</div>
+        <div class="phase-desc">策略执行 → 轨迹收集</div>
+      </div>
+      <div class="phase-item">
+        <div class="phase-num">3</div>
+        <div class="phase-name">GAE优势估计</div>
+        <div class="phase-desc">广义自举估计 → 优势函数</div>
+      </div>
+      <div class="phase-item">
+        <div class="phase-num">4</div>
+        <div class="phase-name">顺序策略更新</div>
+        <div class="phase-desc">按优先级 → HAPPO更新</div>
+      </div>
+      <div class="phase-item">
+        <div class="phase-num">5</div>
+        <div class="phase-name">调度执行</div>
+        <div class="phase-desc">argmax → 充电动作</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 公式列表 -->
+<section class="section" id="formulas">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">2</div>
+      <div>
+        <div class="section-title">核心公式</div>
+        <div class="section-subtitle">共14个公式，覆盖物理先验→注意力→策略→训练全链路</div>
+      </div>
+    </div>
+
+    <div class="formula-grid">
+
+      <!-- 式(3.1) 物理先验 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-formula">物理先验</span>
+          <span class="formula-number">式(3.1)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">S<sub>ij</sub> = MI(i, j) + Granger(i → j)</span>
+          <span class="var-note">S_ij：站点i与站点j的关联强度 &nbsp;|&nbsp; MI：互信息 &nbsp;|&nbsp; Granger：格兰杰因果贡献度</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>先把站点之间的"亲疏远近"关系算清楚。互信息MI衡量两个站点充电需求在统计上的相关程度（懂的自然懂）；格兰杰因果检验则判断"站点i的充电行为能不能预测站点j的"，如果能，说明i对j有因果影响力。把这两项加在一起，就得到站点对(i,j)的物理关联强度S_ij——值越大，两个站点联系越紧密，在后面的注意力机制里就越容易互相"注意到"对方。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.2) 动态注意力 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-step">注意力分数</span>
+          <span class="formula-number">式(3.2)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">ω<sub>ij</sub> = LeakyReLU( W<sub>a</sub> · [h<sub>i</sub> ⊕ h<sub>j</sub> ] )</span>
+          <span class="var-note">ω_ij：站点对(i,j)的注意力分数 &nbsp;|&nbsp; W_a：可学习权重矩阵 &nbsp;|&nbsp; ⊕：拼接操作 &nbsp;|&nbsp; h：节点特征</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>这一步用神经网络自己学出来的注意力分数。两个站点的特征向量h_i和h_j拼在一起[ ]，扔进一个带LeakyReLU激活的全连接层，出来就是一个数字ω_ij。这个数字代表"站点i在决定自己行为的时候，应该给站点j多少关注"。神经网络会自己调整W_a的参数，让这个分数在训练中越来越合理。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.3) 注意力融合 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-step">注意力融合</span>
+          <span class="formula-number">式(3.3)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">e<sub>ij</sub> = ω<sub>ij</sub> + γ · S<sub>ij</sub></span>
+          <span class="var-note">e_ij：融合后的注意力分数 &nbsp;|&nbsp; ω_ij：神经网络学出来的注意力 &nbsp;|&nbsp; γ：物理先验权重 &nbsp;|&nbsp; S_ij：物理先验关联</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>把神经网络自己学出来的注意力ω_ij，和物理领域知识S_ij结合起来。γ是物理先验的权重（超参数），γ越大，说明越相信物理规律；γ越小，说明越让神经网络自己决定谁关注谁。这一步既利用了专家知识（物理规律），又保留了数据驱动（神经网络学出来的关系），两者互补，缺一不可。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.4) 归一化 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-step">Softmax归一化</span>
+          <span class="formula-number">式(3.4)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">α<sub>ij</sub> = softmax( e<sub>ij</sub> ) = exp(e<sub>ij</sub>) / Σ<sub>k</sub> exp(e<sub>kj</sub>)</span>
+          <span class="var-note">α_ij：归一化注意力权重（所有站点对同一j的权重之和为1）</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>Softmax把所有融合注意力e_ij变成概率分布。对于"节点j关注哪些邻居"这件事，把所有e_kj取指数exp，再除以总和，归一化到[0,1]区间，且所有邻居的α加起来等于1。这么做的目的是：让每个节点j的注意力权重是一个合法的概率分布，方便后面加权聚合，也保证了数值稳定性。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.5) 图特征聚合 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-step">特征聚合</span>
+          <span class="formula-number">式(3.5)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">h'<sub>i</sub> = Σ<sub>j∈N(i)</sub> α<sub>ij</sub> · W<sub>V</sub> · h<sub>j</sub></span>
+          <span class="var-note">h'：聚合后的节点特征 &nbsp;|&nbsp; α_ij：注意力权重 &nbsp;|&nbsp; W_V：值投影矩阵 &nbsp;|&nbsp; N(i)：节点i的邻居集合</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>加权平均大法好！每个节点i的新特征h'_i，等于所有邻居节点j的特征h_j（先经过W_V投影），乘以注意力权重α_ij，再求和。用通俗的话说就是："我h'_i参考了周围邻居们的意见，参考多少取决于他们和我的关系有多铁（α_ij）"。图神经网络的精髓就在这里——每个节点不只是自己的特征，还汇聚了全图的结构信息。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.6) 多头注意力 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-step">多头注意力</span>
+          <span class="formula-number">式(3.6)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">h<sub>i</sub><sup>(l+1)</sup> = ⊕<sub>k=1</sub><sup>K</sup> σ( W<sub>k</sub><sup>(l)</sup> · h<sub>i</sub><sup>(l)</sup> + b<sub>k</sub><sup>(l)</sup> )</span>
+          <span class="var-note">⊕：多向量拼接 &nbsp;|&nbsp; K：头数 &nbsp;|&nbsp; σ：激活函数 &nbsp;|&nbsp; l：网络层索引</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>做K次独立的注意力计算（K个头），每次学一套不同的W_k,b_k，捕获不同类型的关联模式（比如时间关联、空间关联、需求关联等）。最后把K个结果直接拼起来（⊕），得到更丰富、更全面的特征表达。这就像让K个专家各自分析一个问题，最后综合所有人的意见做决策，比一个人强得多。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.7) 残差连接 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-step">残差连接</span>
+          <span class="formula-number">式(3.7)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">h<sub>i</sub><sup>(l+1)</sup> = σ( h'<sub>i</sub> ) + h<sub>i</sub><sup>(l)</sup></span>
+          <span class="var-note">σ：激活函数 &nbsp;|&nbsp; h'_i：GAT聚合结果 &nbsp;|&nbsp; h_i^(l)：上一层输入（恒等映射）</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>把GAT算出来的新特征h'_i（经过激活σ），直接加到上一层的输入h_i^l上。这就是ResNet的核心思想——不要求网络每次都重新学完整的变换，只要求它学"要改变多少"（残差）。这样即使堆很多层网络，梯度也能顺畅地传回去，不会因为层数太多而"信息衰减"，训练更稳定，特征提取更有效。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.8) 策略网络MLP -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-action">策略网络</span>
+          <span class="formula-number">式(3.8)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">z<sub>1</sub> = W<sub>1</sub> · h<sub>i</sub> + b<sub>1</sub><br>
+          z<sub>3</sub> = W<sub>2</sub> · LeakyReLU(z<sub>1</sub>) + b<sub>2</sub></span>
+          <span class="var-note">z_1：第一层隐状态 &nbsp;|&nbsp; z_3：第二层输出（未归一化动作概率）&nbsp;|&nbsp; W：权重矩阵</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>策略网络就是一个双层MLP。第一层：输入GAT提取出来的站点特征h_i，线性变换得到z_1；第二层：对z_1做LeakyReLU激活（让负值也能有一点梯度），再线性变换得到z_3，z_3的维度等于该车型可执行的动作数，数值上表示"每个动作的得分"（未归一化），得分越高越可能被选择。这就是一个"输入状态，输出动作偏好"的神经网络。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.9) 动作掩码 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-action">动作掩码</span>
+          <span class="formula-number">式(3.9)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">π<sub>masked</sub>(a<sub>i</sub> | s<sub>i</sub>) = π<sub>θ</sub>(a<sub>i</sub> | s<sub>i</sub>) ⊙ M(s<sub>i</sub>)</span>
+          <span class="var-note">π_θ：原始策略网络输出 &nbsp;|&nbsp; M(s_i)：动作掩码向量（0/1）&nbsp;|&nbsp; ⊙：逐元素乘法</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>直接用网络输出的动作概率有个问题——不是所有动作在当前状态下都合法。比如电量为100%时"充电"这个动作就没意义。掩码M(s_i)就是一个0/1向量：非法动作位置填0，合法动作位置填1。用⊙逐元素乘，就把非法动作的概率直接变成0，合法动作概率保持不变——但这还没完，概率和不等于1了，需要下一步重归一化。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.10) 重归一化 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-action">重归一化</span>
+          <span class="formula-number">式(3.10)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">π<sub>norm</sub>(a<sub>i</sub> | s<sub>i</sub>) = π<sub>masked</sub>(a<sub>i</sub> | s<sub>i</sub>) / Σ π<sub>masked</sub></span>
+          <span class="var-note">π_norm：合法概率之和等于1 &nbsp;|&nbsp; 非法动作概率→0 &nbsp;|&nbsp; 合法动作概率按比例重新分配</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>掩码把非法概率清零后，总概率和小于1了，不是一个合法的概率分布。怎么办？除以总和。这样所有合法动作的概率按比例放大，重新变成一个合法的概率分布（总和=1）。从数学上保证了无论掩码怎么变，π_norm永远是一个合法的概率分布，策略网络可以稳定训练。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.11) 动作选择 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-action">动作选择</span>
+          <span class="formula-number">式(3.11)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">a<sub>i</sub>* = arg max<sub>a<sub>i</sub></sub> π<sub>norm</sub>(a<sub>i</sub> | s<sub>i</sub>)</span>
+          <span class="var-note">a_i*：最终选择的充电动作 &nbsp;|&nbsp; argmax：选择概率最大的合法动作</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>贪心策略：在所有合法动作中，挑选概率π_norm最大的那个，作为最终执行的充电动作a_i*。这就是推理阶段（inference）的决策方式——"哪个动作概率最高就选哪个"。训练时用随机采样（探索），推理时用argmax（利用），这是强化学习的经典套路。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.12) 奖励函数 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-loss">奖励函数</span>
+          <span class="formula-number">式(3.12)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">R<sub>t</sub> = −( w<sub>1</sub> · T<sub>t</sub> + w<sub>2</sub> · P<sub>t</sub> + w<sub>3</sub> · L<sub>t</sub> − w<sub>4</sub> · G<sub>t</sub> )</span>
+          <span class="var-note">T_t：等待时间 &nbsp;|&nbsp; P_t：充电费用 &nbsp;|&nbsp; L_t：充电损失 &nbsp;|&nbsp; G_t：电网收益 &nbsp;|&nbsp; w_i：权重系数 &nbsp;|&nbsp; 负号→最小化=最大化奖励</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>强化学习的核心——给每个动作打分。打分原则：等待时间T越长、电费P越高、充电损失L越大，奖励R越低（被惩罚）；电网收益G越高，奖励R越高（被奖励）。括号前面加负号，说明这是一个"最小化问题变最大化"的经典技巧——让等待时间等成本越小越好，电网收益越大越好。所有w_i都是权重，可调节各因素的相对重要性。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.13) PPO损失 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-loss">PPO裁剪损失</span>
+          <span class="formula-number">式(3.13)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">L<sup>CLIP</sup> = E<sub>t</sub>[ min( r<sub>t</sub> · A<sub>t</sub>, clip(r<sub>t</sub>, 1−ε, 1+ε) · A<sub>t</sub> ) ]</span>
+          <span class="var-note">r_t = π_θ/π_θ_old（概率比）&nbsp;|&nbsp; A_t：优势函数 &nbsp;|&nbsp; ε：裁剪区间（通常0.2）&nbsp;|&nbsp; E：期望</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>这是HAPPO的精髓。r_t是新旧策略概率的比值，衡量"这个动作现在比过去好多少"。clip把r_t夹在[1-ε, 1+ε]区间——如果新策略提升太多（r_t > 1+ε），clip把增长砍掉；如果新策略大幅退步（r_t < 1-ε），同样不允许变差超过限制。这样就防止策略在一次更新中变动太大而崩溃。每次更新后θ_old更新为θ_new，重复迭代，策略逐步变强。</p>
+        </div>
+      </div>
+
+      <!-- 式(3.14) 梯度更新 -->
+      <div class="formula-card">
+        <div class="formula-card-header">
+          <span class="tag tag-loss">梯度更新</span>
+          <span class="formula-number">式(3.14)</span>
+        </div>
+        <div class="formula-display">
+          <span class="main-eq">θ<sub>new</sub> = θ<sub>old</sub> − η · ∇<sub>θ</sub> L<sup>CLIP</sup></span>
+          <span class="var-note">η：学习率（步长）&nbsp;|&nbsp; ∇：梯度符号 &nbsp;|&nbsp; θ：策略网络所有参数 &nbsp;|&nbsp; 负号：梯度下降方向</span>
+        </div>
+        <div class="formula-explain">
+          <h4>通俗讲解</h4>
+          <p>神经网络的"学习"过程：对损失L_CLIP求关于θ的梯度∇_θ，再沿着梯度的反方向（因为要最小化损失）走一小步η（学习率）。就这么简单粗暴：梯度指向损失增加最快的方向，反方向就是损失减小最快的方向。每次更新一点点，重复成千上万次，策略网络就越来越会做充电调度决策了。</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- 算法伪代码 -->
+<section class="section" id="algorithms">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">3</div>
+      <div>
+        <div class="section-title">算法伪代码</div>
+        <div class="section-subtitle">3个核心算法模块，可直接复制进论文</div>
+      </div>
+    </div>
+
+    <!-- 算法3.1 -->
+    <div class="algo-card">
+      <div class="algo-header">
+        <div class="algo-icon">🧠</div>
+        <div class="algo-title">算法 3.1 &nbsp;基于物理先验的GAT空间特征提取</div>
+        <div class="algo-tag">Algorithm 3.1</div>
+      </div>
+      <div class="algo-body">
+        <pre class="algo-code"><span class="comment"># 输入：站点特征 H^(0)，物理先验矩阵 S，层数 L，头数 K</span>
+<span class="comment"># 输出：空间增强特征 H^(L)</span>
+
+<span class="step">Step 1.</span>  <span class="bold">构建物理先验关联矩阵</span>
+    <span class="indent">对所有站点对 (i, j)，计算：</span>
+    <span class="indent2">S_ij ← MI(i, j) + Granger(i → j)</span>
+    <span class="indent">构建邻接矩阵 A，将 S_ij 作为边权重</span>
+
+<span class="step">Step 2.</span>  <span class="bold">多层 MH-Res-GAT 前向传播</span>
+    <span class="indent">for l = 1 to L do:</span>
+    <span class="indent2"><span class="comment"># 多头注意力计算</span></span>
+    <span class="indent2">for k = 1 to K do:</span>
+    <span class="indent3">ω_ij ← LeakyReLU(W_a · [h_i ⊕ h_j])</span>
+    <span class="indent3">e_ij ← ω_ij + γ · S_ij           <span class="comment"># 融合物理先验</span></span>
+    <span class="indent3">α_ij ← softmax_j(e_ij)           <span class="comment"># 归一化权重</span></span>
+    <span class="indent3">h'_i ← Σ_j α_ij · W_V · h_j      <span class="comment"># 加权聚合</span></span>
+    <span class="indent2"><span class="bold">h_i^mid</span> ← <span class="fn">CONCAT</span>( h'_i for k = 1..K )  <span class="comment"># K头拼接</span></span>
+    <span class="indent2">h_i^(l) ← σ(h_i^mid) + h_i^(l-1)  <span class="comment"># 残差连接</span></span>
+    <span class="indent">end for</span>
+
+<span class="step">Step 3.</span>  <span class="bold">输出空间增强特征</span>
+    <span class="indent"><span class="bold">return</span> H^(L) ← [ h_1^(L), h_2^(L), ..., h_N^(L) ]</span></pre>
+      </div>
+    </div>
+
+    <!-- 算法3.2 -->
+    <div class="algo-card">
+      <div class="algo-header">
+        <div class="algo-icon">⚡</div>
+        <div class="algo-title">算法 3.2 &nbsp;掩码策略网络与动作选择</div>
+        <div class="algo-tag">Algorithm 3.2</div>
+      </div>
+      <div class="algo-body">
+        <pre class="algo-code"><span class="comment"># 输入：站点特征 h_i（来自GAT），当前状态 s_i，策略网络参数 θ</span>
+<span class="comment"># 输出：最优充电动作 a_i*</span>
+
+<span class="step">Step 1.</span>  <span class="bold">策略网络前向传播</span>
+    <span class="indent">z_1 ← W_1 · h_i + b_1                <span class="comment"># 第一层</span></span>
+    <span class="indent">z_3 ← W_2 · LeakyReLU(z_1) + b_2    <span class="comment"># 第二层（未归一化动作分数）</span></span>
+    <span class="indent">π_θ ← <span class="fn">softmax</span>(z_3)              <span class="comment"># 原始动作概率分布</span></span>
+
+<span class="step">Step 2.</span>  <span class="bold">生成并应用动作掩码</span>
+    <span class="indent">M(s_i) ← <span class="fn">get_mask</span>(s_i)         <span class="comment"># 根据状态生成掩码（0=非法，1=合法）</span></span>
+    <span class="indent">π_masked ← π_θ ⊙ M(s_i)             <span class="comment"># 逐元素乘法，非法动作概率→0</span></span>
+
+<span class="step">Step 3.</span>  <span class="bold">重归一化</span>
+    <span class="indent">π_norm ← π_masked / Σ π_masked     <span class="comment"># 重新归一化为合法概率分布</span></span>
+
+<span class="step">Step 4.</span>  <span class="bold">推理：贪心动作选择</span>
+    <span class="indent">a_i* ← argmax_a_i π_norm(a_i | s_i) <span class="comment"># 选择概率最高的合法动作</span></span>
+    <span class="indent"><span class="bold">return</span> a_i*</span>
+
+<span class="comment"># 训练时：π_norm 用于采样与环境交互</span>
+<span class="comment"># 推理时：argmax 用于贪心决策</span></pre>
+      </div>
+    </div>
+
+    <!-- 算法3.3 -->
+    <div class="algo-card">
+      <div class="algo-header">
+        <div class="algo-icon">🎯</div>
+        <div class="algo-title">算法 3.3 &nbsp;HAPPO-GNN-RL 完整训练主循环</div>
+        <div class="algo-tag">Algorithm 3.3</div>
+      </div>
+      <div class="algo-body">
+        <pre class="algo-code"><span class="comment"># HAPPO-GNN-RL 充电站调度多智能体强化学习训练框架</span>
+<span class="comment"># 输入：站点特征 H，物理先验 S，最大迭代 T_max，批次 N</span>
+
+<span class="step">Phase 1.</span> <span class="bold">GAT 空间特征提取（所有站点并行）</span>
+    <span class="indent">H ← MH-Res-GAT( H^(0), S )      <span class="comment"># 算法3.1，获得空间增强特征</span></span>
+
+<span class="step">Phase 2.</span> <span class="bold">多智能体轨迹收集</span>
+    <span class="indent">for episode = 1 to N do:</span>
+    <span class="indent2">for 每个站点 i in 充电站集合:</span>
+    <span class="indent3">a_i ← π_norm(h_i)             <span class="comment"># 算法3.2：掩码→归一化→采样</span></span>
+    <span class="indent3">执行动作 a_i，获得奖励 r_t</span>
+    <span class="indent3">观测下一状态 s_{i,t+1}</span>
+    <span class="indent3">存储轨迹：{ s_i, a_i, r_t, s_i' }</span>
+    <span class="indent2">end for</span>
+    <span class="indent">end for</span>
+
+<span class="step">Phase 3.</span> <span class="bold">GAE 优势函数估计</span>
+    <span class="indent">for 每个智能体 i，车型优先级 order = [type_A, ..., type_D]:</span>
+    <span class="indent2">计算 n步回报：G_t ← Σ_{k=0}^{n-1} γ^k · r_{t+k}</span>
+    <span class="indent2">计算GAE优势：</span>
+    <span class="indent3">A_t^GAE ← Σ_{k=0}^{∞} (γλ)^k · δ_{t+k}</span>
+    <span class="indent3">δ_k ← r_k + γ·V(s_{k+1}) − V(s_k)</span>
+
+<span class="step">Phase 4.</span> <span class="bold">HAPPO 顺序策略更新</span>
+    <span class="indent">for i in order（按车型优先级顺序）:</span>
+    <span class="indent2"><span class="comment"># 更新智能体i的策略，其他智能体策略冻结</span></span>
+    <span class="indent2">r_t ← π_θ(a_i | s_i) / π_θ_old(a_i | s_i)</span>
+    <span class="indent2">L_CLIP ← min( r_t · A_t, clip(r_t, 1−ε, 1+ε) · A_t )</span>
+    <span class="indent2">θ_i ← θ_i − η · ∇_θ L_CLIP           <span class="comment"># 梯度下降更新</span></span>
+    <span class="indent2">π_θ_old(i) ← π_θ(i)                 <span class="comment"># 保存新策略</span></span>
+    <span class="indent">end for</span>
+
+<span class="step">Phase 5.</span> <span class="bold">评估与下一轮</span>
+    <span class="indent">θ_old ← θ_new</span>
+    <span class="indent">重复 Phase 1 ~ 4，直到收敛或 T ≥ T_max</span></pre>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- 变量说明 -->
+<section class="section" id="variables">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">4</div>
+      <div>
+        <div class="section-title">核心变量说明</div>
+        <div class="section-subtitle">14个公式涉及的符号与含义速查表</div>
+      </div>
+    </div>
+    <div class="var-table-wrap">
+      <table class="var-table">
+        <thead>
+          <tr>
+            <th>符号</th><th>含义</th><th>所属公式</th><th>类别</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="sym">S<sub>ij</sub></td>
+            <td>站点i与站点j的物理关联强度</td>
+            <td>式(3.1)</td>
+            <td><span class="role-badge role-physics">物理先验</span></td>
+          </tr>
+          <tr>
+            <td class="sym">MI(i, j)</td>
+            <td>站点i与j的充电需求互信息</td>
+            <td>式(3.1)</td>
+            <td><span class="role-badge role-physics">物理先验</span></td>
+          </tr>
+          <tr>
+            <td class="sym">Granger(i → j)</td>
+            <td>站点i对站点j的格兰杰因果贡献度</td>
+            <td>式(3.1)</td>
+            <td><span class="role-badge role-physics">物理先验</span></td>
+          </tr>
+          <tr>
+            <td class="sym">ω<sub>ij</sub></td>
+            <td>神经网络学习的动态注意力分数</td>
+            <td>式(3.2)</td>
+            <td><span class="role-badge role-gat">GAT</span></td>
+          </tr>
+          <tr>
+            <td class="sym">W<sub>a</sub></td>
+            <td>注意力机制的投影权重矩阵（可学习）</td>
+            <td>式(3.2)</td>
+            <td><span class="role-badge role-gat">GAT</span></td>
+          </tr>
+          <tr>
+            <td class="sym">e<sub>ij</sub></td>
+            <td>融合物理先验后的注意力分数</td>
+            <td>式(3.3)</td>
+            <td><span class="role-badge role-gat">GAT</span></td>
+          </tr>
+          <tr>
+            <td class="sym">γ</td>
+            <td>物理先验权重系数（超参数）</td>
+            <td>式(3.3)</td>
+            <td><span class="role-badge role-gat">GAT</span></td>
+          </tr>
+          <tr>
+            <td class="sym">α<sub>ij</sub></td>
+            <td>归一化注意力权重（概率分布）</td>
+            <td>式(3.4)</td>
+            <td><span class="role-badge role-gat">GAT</span></td>
+          </tr>
+          <tr>
+            <td class="sym">h<sub>i</sub></td>
+            <td>站点i的图神经网络特征向量</td>
+            <td>式(3.5)~(3.8)</td>
+            <td><span class="role-badge role-gat">GAT</span></td>
+          </tr>
+          <tr>
+            <td class="sym">W<sub>V</sub></td>
+            <td>GAT的值投影矩阵（可学习）</td>
+            <td>式(3.5)</td>
+            <td><span class="role-badge role-gat">GAT</span></td>
+          </tr>
+          <tr>
+            <td class="sym">K</td>
+            <td>多头注意力的头数</td>
+            <td>式(3.6)</td>
+            <td><span class="role-badge role-gat">GAT</span></td>
+          </tr>
+          <tr>
+            <td class="sym">σ(·)</td>
+            <td>激活函数（如ReLU/LeakyReLU）</td>
+            <td>式(3.6)~(3.7)</td>
+            <td><span class="role-badge role-gat">GAT</span></td>
+          </tr>
+          <tr>
+            <td class="sym">π<sub>θ</sub>(a | s)</td>
+            <td>参数为θ的策略网络，输出动作a的条件概率</td>
+            <td>式(3.9)~(3.11)</td>
+            <td><span class="role-badge role-policy">策略</span></td>
+          </tr>
+          <tr>
+            <td class="sym">M(s<sub>i</sub>)</td>
+            <td>动作掩码向量（1=合法，0=非法）</td>
+            <td>式(3.9)</td>
+            <td><span class="role-badge role-policy">策略</span></td>
+          </tr>
+          <tr>
+            <td class="sym">π<sub>norm</sub></td>
+            <td>掩码重归一化后的合法动作概率分布</td>
+            <td>式(3.10)~(3.11)</td>
+            <td><span class="role-badge role-policy">策略</span></td>
+          </tr>
+          <tr>
+            <td class="sym">R<sub>t</sub></td>
+            <td>t时刻的综合奖励（越小越好）</td>
+            <td>式(3.12)</td>
+            <td><span class="role-badge role-reward">奖励</span></td>
+          </tr>
+          <tr>
+            <td class="sym">w<sub>1</sub>~w<sub>4</sub></td>
+            <td>奖励函数的权重系数</td>
+            <td>式(3.12)</td>
+            <td><span class="role-badge role-reward">奖励</span></td>
+          </tr>
+          <tr>
+            <td class="sym">T<sub>t</sub></td>
+            <td>t时刻的车辆等待时间</td>
+            <td>式(3.12)</td>
+            <td><span class="role-badge role-reward">奖励</span></td>
+          </tr>
+          <tr>
+            <td class="sym">P<sub>t</sub></td>
+            <td>t时刻的充电费用成本</td>
+            <td>式(3.12)</td>
+            <td><span class="role-badge role-reward">奖励</span></td>
+          </tr>
+          <tr>
+            <td class="sym">L<sub>t</sub></td>
+            <td>t时刻的充电损失（电池损耗/过充）</td>
+            <td>式(3.12)</td>
+            <td><span class="role-badge role-reward">奖励</span></td>
+          </tr>
+          <tr>
+            <td class="sym">G<sub>t</sub></td>
+            <td>t时刻的电网收益（谷时充电/削峰）</td>
+            <td>式(3.12)</td>
+            <td><span class="role-badge role-reward">奖励</span></td>
+          </tr>
+          <tr>
+            <td class="sym">r<sub>t</sub></td>
+            <td>新旧策略的概率比值（重要性采样比）</td>
+            <td>式(3.13)</td>
+            <td><span class="role-badge role-policy">策略</span></td>
+          </tr>
+          <tr>
+            <td class="sym">A<sub>t</sub></td>
+            <td>t时刻的优势函数值（GAE估计）</td>
+            <td>式(3.13)</td>
+            <td><span class="role-badge role-policy">策略</span></td>
+          </tr>
+          <tr>
+            <td class="sym">ε</td>
+            <td>PPO裁剪超参数（通常设为0.2）</td>
+            <td>式(3.13)</td>
+            <td><span class="role-badge role-policy">策略</span></td>
+          </tr>
+          <tr>
+            <td class="sym">η</td>
+            <td>策略网络学习率</td>
+            <td>式(3.14)</td>
+            <td><span class="role-badge role-policy">策略</span></td>
+          </tr>
+          <tr>
+            <td class="sym">θ</td>
+            <td>策略网络所有可学习参数</td>
+            <td>式(3.14)</td>
+            <td><span class="role-badge role-policy">策略</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 页脚 -->
+<footer>
+  HAPPO-GNN-RL &nbsp;·&nbsp; 基于自适应异质多智能体PPO与多头残差图注意力网络的电车充电站动态调度优化研究
+</footer>
+
+<script>
+  // 平滑滚动
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      document.querySelector(a.getAttribute('href')).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // 导航高亮
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.nav-links a');
+  window.addEventListener('scroll', () => {
+    let cur = '';
+    sections.forEach(s => {
+      if (s.getBoundingClientRect().top <= 80) cur = s.id;
+    });
+    navLinks.forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + cur);
+    });
+  });
+
+  // 卡片滚动进入动画
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('.formula-card, .algo-card').forEach((el, i) => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(24px)';
+    el.style.transition = `opacity 0.5s ease ${i * 0.04}s, transform 0.5s ease ${i * 0.04}s`;
+    observer.observe(el);
+  });
+</script>
+
+</body>
+</html>
